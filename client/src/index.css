@@ -1,0 +1,44 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-background text-slate-100 font-sans antialiased min-h-screen selection:bg-primary selection:text-white;
+  }
+}
+
+/* Custom Glass & BI Styles */
+.bi-card {
+  @apply bg-card border border-border/60 rounded-xl p-5 shadow-card transition-all duration-200 hover:border-border;
+}
+
+.bi-input {
+  @apply bg-slate-900/80 border border-slate-700/80 rounded-lg px-4 py-2.5 text-sm text-slate-100 placeholder-slate-400 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all;
+}
+
+.bi-btn-primary {
+  @apply bg-primary hover:bg-primary-hover text-white font-medium px-4 py-2.5 rounded-lg shadow-glow transition-all active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2;
+}
+
+.bi-btn-secondary {
+  @apply bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium px-4 py-2.5 rounded-lg border border-slate-700 transition-all active:scale-[0.98] flex items-center justify-center gap-2;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0b0f19;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
