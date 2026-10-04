@@ -4,34 +4,96 @@ const Product = require('../models/Product');
 const Customer = require('../models/Customer');
 
 // Helper to format currency
-const formatCurrency = (val) => Number(val.toFixed(2));
+const formatCurrency = (val) => Number(Number(val || 0).toFixed(2));
+
+// Helper to extract days count from query or period string
+const parseDaysFromPeriod = (periodStr) => {
+  if (!periodStr) return 30;
+  const match = periodStr.toString().match(/\d+/);
+  return match ? parseInt(match[0], 10) : 30;
+};
+
+// Helper to calculate dynamic date boundaries based on dataset records
+const getDateRange = async (req) => {
+  const days = req.query.days ? parseInt(req.query.days, 10) : parseDaysFromPeriod(req.query.period);
+  
+  // Anchor to the latest order in the database, or now if no records
+  const latestOrder = await Order.findOne().sort({ orderDate: -1 });
+  const maxDate = latestOrder && latestOrder.orderDate ? new Date(latestOrder.orderDate) : new Date();
+  
+  const startDate = new Date(maxDate.getTime() - days * 24 * 60 * 60 * 1000);
+  const prevStartDate = new Date(startDate.getTime() - days * 24 * 60 * 60 * 1000);
+  
+  return { days, maxDate, startDate, prevStartDate };
+};
 
 // Dashboard Overview KPIs
 const getOverview = async (req, res) => {
   try {
-    const ordersCount = await Order.countDocuments();
-    const customersCount = await Customer.countDocuments();
+    const { days, maxDate, startDate, prevStartDate } = await getDateRange(req);
 
-    // Aggregations
-    const revenueResult = await Order.aggregate([
-      { $match: { status: { $ne: 'Cancelled' } } },
-      { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } }
+    // Current period metrics
+    const currentOrders = await Order.aggregate([
+      {
+        $match: {
+          status: { $ne: 'Cancelled' },
+          orderDate: { $gte: startDate, $lte: maxDate }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$totalAmount' },
+          totalOrders: { $sum: 1 },
+          uniqueCustomers: { $addToSet: '$customerId' }
+        }
+      }
     ]);
 
-    const totalRevenue = revenueResult.length > 0 ? revenueResult[0].totalRevenue : 1250000;
-    const totalOrders = ordersCount > 0 ? ordersCount : 5248;
-    const totalCustomers = customersCount > 0 ? customersCount : 487;
-    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 2381;
+    // Previous period metrics for comparison
+    const prevOrders = await Order.aggregate([
+      {
+        $match: {
+          status: { $ne: 'Cancelled' },
+          orderDate: { $gte: prevStartDate, $lt: startDate }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: { $sum: '$totalAmount' },
+          totalOrders: { $sum: 1 },
+          uniqueCustomers: { $addToSet: '$customerId' }
+        }
+      }
+    ]);
+
+    const curr = currentOrders[0] || { totalRevenue: 0, totalOrders: 0, uniqueCustomers: [] };
+    const prev = prevOrders[0] || { totalRevenue: 0, totalOrders: 0, uniqueCustomers: [] };
+
+    const totalRevenue = curr.totalRevenue;
+    const totalOrders = curr.totalOrders;
+    const totalCustomers = curr.uniqueCustomers.length;
+    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    const prevRevenue = prev.totalRevenue;
+    const prevOrdersCount = prev.totalOrders;
+    const prevCustomers = prev.uniqueCustomers.length;
+    const prevAov = prevOrdersCount > 0 ? prevRevenue / prevOrdersCount : 0;
+
+    const calcGrowth = (c, p) => (p > 0 ? Number((((c - p) / p) * 100).toFixed(1)) : (c > 0 ? 100 : 0));
 
     res.json({
+      period: `${days} days`,
+      days,
       totalRevenue: formatCurrency(totalRevenue),
-      revenueGrowth: 12.5,
+      revenueGrowth: calcGrowth(totalRevenue, prevRevenue),
       totalOrders,
-      ordersGrowth: 8.2,
+      ordersGrowth: calcGrowth(totalOrders, prevOrdersCount),
       totalCustomers,
-      customersGrowth: 5.4,
+      customersGrowth: calcGrowth(totalCustomers, prevCustomers),
       avgOrderValue: formatCurrency(avgOrderValue),
-      aovGrowth: 3.1
+      aovGrowth: calcGrowth(avgOrderValue, prevAov)
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -41,8 +103,15 @@ const getOverview = async (req, res) => {
 // Daily Revenue Trend + 7-Day Moving Average
 const getRevenueTrend = async (req, res) => {
   try {
+    const { days, maxDate, startDate } = await getDateRange(req);
+
     const trendData = await Order.aggregate([
-      { $match: { status: { $ne: 'Cancelled' } } },
+      {
+        $match: {
+          status: { $ne: 'Cancelled' },
+          orderDate: { $gte: startDate, $lte: maxDate }
+        }
+      },
       {
         $group: {
           _id: { $dateToString: { format: "%Y-%m-%d", date: "$orderDate" } },
@@ -50,22 +119,22 @@ const getRevenueTrend = async (req, res) => {
           orders: { $sum: 1 }
         }
       },
-      { $sort: { "_id": 1 } },
-      { $limit: 60 }
+      { $sort: { "_id": 1 } }
     ]);
 
     if (!trendData || trendData.length === 0) {
       // Fallback synthetic trend
       const fallback = [];
       const today = new Date();
-      for (let i = 30; i >= 0; i--) {
+      for (let i = days; i >= 0; i--) {
         const d = new Date(today);
         d.setDate(d.getDate() - i);
         const rev = Math.round(20000 + Math.sin(i * 0.3) * 8000 + Math.random() * 4000);
         fallback.push({
           date: d.toISOString().split('T')[0],
           revenue: rev,
-          movingAverage: Math.round(rev * 0.92)
+          movingAverage: Math.round(rev * 0.92),
+          orders: Math.floor(rev / 1500)
         });
       }
       return res.json(fallback);
@@ -93,7 +162,24 @@ const getRevenueTrend = async (req, res) => {
 // Category Performance
 const getCategoryPerformance = async (req, res) => {
   try {
+    const { startDate, maxDate } = await getDateRange(req);
+
     const categories = await OrderItem.aggregate([
+      {
+        $lookup: {
+          from: 'orders',
+          localField: 'orderId',
+          foreignField: 'orderId',
+          as: 'order'
+        }
+      },
+      { $unwind: '$order' },
+      {
+        $match: {
+          'order.status': { $ne: 'Cancelled' },
+          'order.orderDate': { $gte: startDate, $lte: maxDate }
+        }
+      },
       {
         $lookup: {
           from: 'products',
@@ -105,7 +191,7 @@ const getCategoryPerformance = async (req, res) => {
       { $unwind: { path: '$productDetails', preserveNullAndEmptyArrays: true } },
       {
         $group: {
-          _id: '$productDetails.category',
+          _id: { $ifNull: ['$productDetails.category', 'General'] },
           revenue: { $sum: '$subtotal' },
           unitsSold: { $sum: '$quantity' },
           orderCount: { $sum: 1 }
@@ -115,7 +201,6 @@ const getCategoryPerformance = async (req, res) => {
     ]);
 
     if (!categories || categories.length === 0 || !categories[0]._id) {
-      // Fallback categories
       return res.json([
         { category: 'Electronics', revenue: 450000, unitsSold: 1200, orderCount: 850 },
         { category: 'Clothing', revenue: 280000, unitsSold: 2100, orderCount: 1200 },
@@ -142,8 +227,15 @@ const getCategoryPerformance = async (req, res) => {
 // Region Performance
 const getRegionPerformance = async (req, res) => {
   try {
+    const { startDate, maxDate } = await getDateRange(req);
+
     const regions = await Order.aggregate([
-      { $match: { status: { $ne: 'Cancelled' } } },
+      {
+        $match: {
+          status: { $ne: 'Cancelled' },
+          orderDate: { $gte: startDate, $lte: maxDate }
+        }
+      },
       {
         $group: {
           _id: '$region',
@@ -179,8 +271,15 @@ const getRegionPerformance = async (req, res) => {
 // Channel Breakdown
 const getChannelBreakdown = async (req, res) => {
   try {
+    const { startDate, maxDate } = await getDateRange(req);
+
     const channels = await Order.aggregate([
-      { $match: { status: { $ne: 'Cancelled' } } },
+      {
+        $match: {
+          status: { $ne: 'Cancelled' },
+          orderDate: { $gte: startDate, $lte: maxDate }
+        }
+      },
       {
         $group: {
           _id: '$channel',
@@ -217,7 +316,24 @@ const getChannelBreakdown = async (req, res) => {
 // Top Products Table
 const getTopProducts = async (req, res) => {
   try {
+    const { startDate, maxDate } = await getDateRange(req);
+
     const topProds = await OrderItem.aggregate([
+      {
+        $lookup: {
+          from: 'orders',
+          localField: 'orderId',
+          foreignField: 'orderId',
+          as: 'order'
+        }
+      },
+      { $unwind: '$order' },
+      {
+        $match: {
+          'order.status': { $ne: 'Cancelled' },
+          'order.orderDate': { $gte: startDate, $lte: maxDate }
+        }
+      },
       {
         $group: {
           _id: '$productId',

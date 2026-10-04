@@ -56,13 +56,14 @@ const Dashboard = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
+      const pQuery = `?period=${encodeURIComponent(period)}`;
       const [ovRes, trendRes, catRes, regRes, chanRes, topRes] = await Promise.all([
-        API.get('/dashboard/overview'),
-        API.get('/dashboard/revenue-trend'),
-        API.get('/dashboard/categories'),
-        API.get('/dashboard/regions'),
-        API.get('/dashboard/channels'),
-        API.get('/dashboard/top-products')
+        API.get(`/dashboard/overview${pQuery}`),
+        API.get(`/dashboard/revenue-trend${pQuery}`),
+        API.get(`/dashboard/categories${pQuery}`),
+        API.get(`/dashboard/regions${pQuery}`),
+        API.get(`/dashboard/channels${pQuery}`),
+        API.get(`/dashboard/top-products${pQuery}`)
       ]);
 
       if (ovRes.data) setOverview(ovRes.data);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import API from '../services/api';
 import Navbar from '../components/Navbar';
 import StatCard from '../components/StatCard';
@@ -11,7 +11,10 @@ import {
   Sliders, 
   Table, 
   BarChart2, 
-  Play
+  Play,
+  IndianRupee,
+  Clock,
+  Layers
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -31,13 +34,14 @@ const Forecasting = () => {
   const [forecastDays, setForecastDays] = useState(30);
   const [loading, setLoading] = useState(false);
   const [forecastData, setForecastData] = useState(null);
+  const debounceTimerRef = useRef(null);
 
-  const runForecast = async () => {
+  const runForecast = async (model = selectedModel, days = forecastDays) => {
     setLoading(true);
     try {
       const { data } = await API.post('/forecast', {
-        model: selectedModel,
-        forecastDays: parseInt(forecastDays)
+        model,
+        forecastDays: parseInt(days, 10)
       });
       setForecastData(data);
     } catch (error) {
@@ -47,9 +51,21 @@ const Forecasting = () => {
     }
   };
 
+  // Trigger forecast dynamically with debounce when model or forecastDays changes
   useEffect(() => {
-    runForecast();
-  }, []);
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    debounceTimerRef.current = setTimeout(() => {
+      runForecast(selectedModel, forecastDays);
+    }, 250);
+
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [selectedModel, forecastDays]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-background min-h-screen">
@@ -85,7 +101,9 @@ const Forecasting = () => {
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1.5 flex justify-between">
                 <span>Forecast Horizon</span>
-                <span className="text-primary-light font-bold">{forecastDays} days</span>
+                <span className="text-primary-light font-bold text-sm bg-primary/10 border border-primary/30 px-2 py-0.5 rounded">
+                  {forecastDays} days
+                </span>
               </label>
               <input
                 type="range"
@@ -93,24 +111,29 @@ const Forecasting = () => {
                 max="60"
                 step="1"
                 value={forecastDays}
-                onChange={(e) => setForecastDays(e.target.value)}
+                onChange={(e) => setForecastDays(Number(e.target.value))}
                 className="w-full accent-primary cursor-pointer h-2 bg-slate-800 rounded-lg"
               />
+              <div className="flex justify-between text-[10px] text-slate-400 mt-1">
+                <span>7 days</span>
+                <span>30 days</span>
+                <span>60 days</span>
+              </div>
             </div>
 
             <div>
               <button
-                onClick={runForecast}
+                onClick={() => runForecast(selectedModel, forecastDays)}
                 disabled={loading}
                 className="bi-btn-primary w-full py-2.5 text-sm font-semibold"
               >
                 {loading ? (
-                  <span className="flex items-center gap-2">
+                  <span className="flex items-center justify-center gap-2">
                     <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                    Running ML Prediction...
+                    Calculating {forecastDays}d ML Forecast...
                   </span>
                 ) : (
-                  <span className="flex items-center gap-2">
+                  <span className="flex items-center justify-center gap-2">
                     <Play size={16} /> Run ML Forecast
                   </span>
                 )}
@@ -119,31 +142,47 @@ const Forecasting = () => {
           </div>
         </div>
 
-        {/* Model Evaluation Metric Summary Cards */}
-        {forecastData && forecastData.metrics && (
+        {/* Model Evaluation & Horizon Summary Cards */}
+        {forecastData && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            <div className="bi-card">
-              <p className="text-xs font-semibold text-slate-400 uppercase">Selected Model</p>
-              <h3 className="text-xl font-bold text-white mt-1">{forecastData.selectedModel}</h3>
-              <p className="text-[11px] text-slate-400 mt-2">Active Evaluated Pipeline</p>
+            <div className="bi-card border-primary/30 bg-primary/5">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-400 uppercase">Predicted Revenue ({forecastData.forecastDays}d)</p>
+                <Clock size={16} className="text-primary-light" />
+              </div>
+              <h3 className="text-2xl font-extrabold text-white mt-1">
+                ₹{forecastData.summary?.totalPredictedRevenue ? Number(forecastData.summary.totalPredictedRevenue).toLocaleString('en-IN') : '0'}
+              </h3>
+              <p className="text-[11px] text-primary-light mt-2 font-medium">
+                ₹{forecastData.summary?.avgDailyForecast ? Number(forecastData.summary.avgDailyForecast).toLocaleString('en-IN') : '0'} / day avg run-rate
+              </p>
             </div>
 
             <div className="bi-card">
-              <p className="text-xs font-semibold text-slate-400 uppercase">Mean Absolute Error (MAE)</p>
-              <h3 className="text-2xl font-extrabold text-primary-light mt-1">₹{forecastData.metrics.mae}</h3>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-400 uppercase">Mean Absolute Error (MAE)</p>
+                <span className="text-[10px] text-slate-400 font-mono">Residual</span>
+              </div>
+              <h3 className="text-2xl font-extrabold text-primary-light mt-1">₹{forecastData.metrics?.mae}</h3>
               <p className="text-[11px] text-emerald-400 mt-2">Average residual error</p>
             </div>
 
             <div className="bi-card">
-              <p className="text-xs font-semibold text-slate-400 uppercase">Root Mean Sq Error (RMSE)</p>
-              <h3 className="text-2xl font-extrabold text-cyan-light mt-1">₹{forecastData.metrics.rmse}</h3>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-400 uppercase">Root Mean Sq Error (RMSE)</p>
+                <span className="text-[10px] text-slate-400 font-mono">Std Dev</span>
+              </div>
+              <h3 className="text-2xl font-extrabold text-cyan-light mt-1">₹{forecastData.metrics?.rmse}</h3>
               <p className="text-[11px] text-slate-400 mt-2">Standard deviation of residuals</p>
             </div>
 
             <div className="bi-card">
-              <p className="text-xs font-semibold text-slate-400 uppercase">$R^2$ Score (Accuracy)</p>
-              <h3 className="text-2xl font-extrabold text-emerald-400 mt-1">{forecastData.metrics.r2}</h3>
-              <p className="text-[11px] text-emerald-400 mt-2">Variance explained</p>
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-400 uppercase">R² Score (Accuracy)</p>
+                <span className="text-[10px] text-emerald-400 font-bold">Good fit</span>
+              </div>
+              <h3 className="text-2xl font-extrabold text-emerald-400 mt-1">{forecastData.metrics?.r2}</h3>
+              <p className="text-[11px] text-emerald-400 mt-2">Variance explained by {forecastData.selectedModel}</p>
             </div>
           </div>
         )}
@@ -172,13 +211,21 @@ const Forecasting = () => {
                   {forecastData.modelComparison.map((m) => (
                     <tr 
                       key={m.modelKey} 
-                      className={`hover:bg-slate-800/40 transition-colors ${m.isBest ? 'bg-primary/10 border-l-4 border-l-primary' : ''}`}
+                      onClick={() => setSelectedModel(m.modelKey)}
+                      className={`hover:bg-slate-800/40 transition-colors cursor-pointer ${
+                        selectedModel === m.modelKey ? 'bg-primary/15 border-l-4 border-l-primary' : ''
+                      }`}
                     >
                       <td className="px-4 py-3 font-bold text-white flex items-center gap-2">
                         {m.model}
                         {m.isBest && (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary text-white">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
                             Best Model
+                          </span>
+                        )}
+                        {selectedModel === m.modelKey && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-primary text-white">
+                            Active
                           </span>
                         )}
                       </td>
@@ -206,7 +253,7 @@ const Forecasting = () => {
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
                   <TrendingUp size={18} className="text-cyan-light" />
-                  Revenue Forecast Curve & Confidence Band
+                  Revenue Forecast Curve & Confidence Band ({forecastData.forecastDays} Days Horizon)
                 </h3>
                 <p className="text-xs text-slate-400">Historical actual revenue vs ML predicted multi-step horizon</p>
               </div>
@@ -216,7 +263,7 @@ const Forecasting = () => {
                   <span className="w-3 h-0.5 bg-primary"></span> Actual Revenue
                 </span>
                 <span className="flex items-center gap-1.5 text-cyan-light">
-                  <span className="w-3 h-0.5 bg-cyan-light border-dashed"></span> Forecast
+                  <span className="w-3 h-0.5 bg-cyan-light border-dashed"></span> Forecast ({forecastData.forecastDays} days)
                 </span>
               </div>
             </div>
@@ -265,10 +312,15 @@ const Forecasting = () => {
 
             {/* Forecast Table Preview */}
             <div className="bi-card flex flex-col justify-between">
-              <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-                <Calendar size={18} className="text-cyan-light" />
-                Predicted Daily Revenue Schedule
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                  <Calendar size={18} className="text-cyan-light" />
+                  Predicted Daily Revenue ({forecastData.forecast?.length || 0} Days)
+                </h3>
+                <span className="text-xs text-slate-400 font-mono">
+                  Total: ₹{forecastData.summary?.totalPredictedRevenue?.toLocaleString('en-IN')}
+                </span>
+              </div>
 
               <div className="overflow-y-auto max-h-64 border border-slate-800 rounded-lg">
                 <table className="w-full text-left text-xs text-slate-300">
@@ -281,7 +333,7 @@ const Forecasting = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {forecastData.forecast.map((f) => (
+                    {forecastData.forecast && forecastData.forecast.map((f) => (
                       <tr key={f.date} className="hover:bg-slate-800/40">
                         <td className="px-4 py-2 font-mono font-medium text-slate-300">{f.date}</td>
                         <td className="px-4 py-2 text-right font-bold text-cyan-light">₹{f.forecast.toLocaleString('en-IN')}</td>
