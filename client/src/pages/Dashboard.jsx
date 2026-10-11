@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import API from '../services/api';
+import ML_API from '../services/mlApi';
 import Navbar from '../components/Navbar';
 import StatCard from '../components/StatCard';
 import { 
@@ -58,12 +58,12 @@ const Dashboard = () => {
     try {
       const pQuery = `?period=${encodeURIComponent(period)}`;
       const [ovRes, trendRes, catRes, regRes, chanRes, topRes] = await Promise.all([
-        API.get(`/dashboard/overview${pQuery}`),
-        API.get(`/dashboard/revenue-trend${pQuery}`),
-        API.get(`/dashboard/categories${pQuery}`),
-        API.get(`/dashboard/regions${pQuery}`),
-        API.get(`/dashboard/channels${pQuery}`),
-        API.get(`/dashboard/top-products${pQuery}`)
+        ML_API.get(`/dashboard/overview${pQuery}`),
+        ML_API.get(`/dashboard/revenue-trend${pQuery}`),
+        ML_API.get(`/dashboard/categories${pQuery}`),
+        ML_API.get(`/dashboard/regions${pQuery}`),
+        ML_API.get(`/dashboard/channels${pQuery}`),
+        ML_API.get(`/dashboard/top-products${pQuery}`)
       ]);
 
       if (ovRes.data) setOverview(ovRes.data);
@@ -75,7 +75,7 @@ const Dashboard = () => {
 
       // Fetch data freshness status
       try {
-        const dsRes = await API.get('/data/datasets');
+        const dsRes = await ML_API.get('/data/datasets');
         if (dsRes.data?.datasets) {
           const latestModified = dsRes.data.datasets
             .map(d => d.lastModified)

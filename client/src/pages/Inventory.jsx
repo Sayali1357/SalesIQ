@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import API from '../services/api';
+import ML_API from '../services/mlApi';
 import Navbar from '../components/Navbar';
 import StatCard from '../components/StatCard';
 import { 
@@ -31,7 +31,7 @@ const Inventory = () => {
   const fetchInventory = async () => {
     setLoading(true);
     try {
-      const { data } = await API.get('/inventory');
+      const { data } = await ML_API.get('/inventory');
       if (data) setInventoryData(data);
     } catch (error) {
       console.error('Error fetching inventory:', error);
@@ -43,7 +43,7 @@ const Inventory = () => {
   const handlePredictDemand = async () => {
     setPredicting(true);
     try {
-      const { data } = await API.post('/inventory/predict-demand');
+      const { data } = await ML_API.post('/inventory/predict-demand');
       if (data) setInventoryData(data);
     } catch (error) {
       console.error('Error predicting demand:', error);

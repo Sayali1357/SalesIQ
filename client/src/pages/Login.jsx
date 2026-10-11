@@ -102,15 +102,15 @@ const Login = () => {
           {isRegistering && (
             <div>
               <label className="block text-xs font-semibold text-slate-300 mb-1">Full Name</label>
-              <div className="relative">
-                <User className="absolute left-3 top-3 text-slate-400 w-4 h-4" />
+              <div className="relative flex items-center">
+                <User className="absolute left-3.5 text-slate-400 w-4 h-4 pointer-events-none z-10" />
                 <input
                   type="text"
                   required
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="John Doe"
-                  className="bi-input pl-10 w-full"
+                  className="bi-input pl-11 w-full"
                 />
               </div>
             </div>
@@ -118,30 +118,30 @@ const Login = () => {
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">Email Address</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-3 text-slate-400 w-4 h-4" />
+            <div className="relative flex items-center">
+              <Mail className="absolute left-3.5 text-slate-400 w-4 h-4 pointer-events-none z-10" />
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="admin@salesiq.com"
-                className="bi-input pl-10 w-full"
+                className="bi-input pl-11 w-full"
               />
             </div>
           </div>
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-3 text-slate-400 w-4 h-4" />
+            <div className="relative flex items-center">
+              <Lock className="absolute left-3.5 text-slate-400 w-4 h-4 pointer-events-none z-10" />
               <input
                 type="password"
                 required
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="bi-input pl-10 w-full"
+                className="bi-input pl-11 w-full"
               />
             </div>
           </div>

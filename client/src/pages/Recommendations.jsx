@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import API from '../services/api';
+import ML_API from '../services/mlApi';
 import Navbar from '../components/Navbar';
 import { 
   Bot, 
@@ -16,20 +16,36 @@ const Recommendations = () => {
   const [selectedProductId, setSelectedProductId] = useState('PROD_001');
   const [loading, setLoading] = useState(false);
   const [recommendationData, setRecommendationData] = useState(null);
-
-  const productOptions = [
+  const [productOptions, setProductOptions] = useState([
     { id: 'PROD_001', name: 'Pro Laptop Ultra 15', category: 'Electronics', price: 85000 },
     { id: 'PROD_002', name: 'Smart Phone X Pro', category: 'Electronics', price: 45000 },
     { id: 'PROD_003', name: 'Noise-Canceling Headphones', category: 'Electronics', price: 15000 },
     { id: 'PROD_004', name: 'Ergonomic Office Chair', category: 'Furniture', price: 20000 },
     { id: 'PROD_005', name: 'Smart Watch Series 7', category: 'Electronics', price: 12000 },
     { id: 'PROD_006', name: 'Wireless Mechanical Keyboard', category: 'Electronics', price: 8500 }
-  ];
+  ]);
+
+  useEffect(() => {
+    const fetchAvailableProducts = async () => {
+      try {
+        const { data } = await ML_API.get('/recommend/products');
+        if (data && data.length > 0) {
+          setProductOptions(data);
+          if (!data.some(p => p.id === selectedProductId)) {
+            setSelectedProductId(data[0].id);
+          }
+        }
+      } catch (err) {
+        // Fallback to initial options
+      }
+    };
+    fetchAvailableProducts();
+  }, []);
 
   const fetchRecommendations = async (pid) => {
     setLoading(true);
     try {
-      const { data } = await API.get(`/recommendations/product/${pid}?topN=5`);
+      const { data } = await ML_API.get(`/recommendations/product/${pid}?topN=5`);
       setRecommendationData(data);
     } catch (error) {
       console.error('Error loading product recommendations:', error);
@@ -39,7 +55,9 @@ const Recommendations = () => {
   };
 
   useEffect(() => {
-    fetchRecommendations(selectedProductId);
+    if (selectedProductId) {
+      fetchRecommendations(selectedProductId);
+    }
   }, [selectedProductId]);
 
   return (

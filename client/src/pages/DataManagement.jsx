@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import API from '../services/api';
+import ML_API from '../services/mlApi';
 import Navbar from '../components/Navbar';
 import {
   DatabaseZap,
@@ -70,7 +70,7 @@ const DataManagement = () => {
   const fetchDatasets = async () => {
     setLoading(true);
     try {
-      const { data } = await API.get('/data/datasets');
+      const { data } = await ML_API.get('/data/datasets');
       if (data.datasets) setDatasets(data.datasets);
       if (data.mlStatus) setMlStatus(data.mlStatus);
     } catch (err) {
@@ -95,14 +95,14 @@ const DataManagement = () => {
     formData.append('datasetType', selectedDatasetType);
 
     try {
-      const { data } = await API.post('/data/upload', formData, {
+      const { data } = await ML_API.post('/data/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         timeout: 120000
       });
       setUploadResult(data);
       fetchDatasets();
     } catch (err) {
-      setError(err.response?.data?.message || 'Upload failed');
+      setError(err.response?.data?.message || err.response?.data?.detail || 'Upload failed');
     } finally {
       setUploading(false);
     }
@@ -129,11 +129,11 @@ const DataManagement = () => {
     setRetrainResult(null);
     setError('');
     try {
-      const { data } = await API.post('/data/retrain', { datasetType }, { timeout: 120000 });
+      const { data } = await ML_API.post('/data/retrain', { datasetType }, { timeout: 120000 });
       setRetrainResult(data);
       fetchDatasets();
     } catch (err) {
-      setError(err.response?.data?.message || 'Re-training failed. Is the ML service running?');
+      setError(err.response?.data?.message || err.response?.data?.detail || 'Re-training failed. Is the ML service running?');
     } finally {
       setRetraining(false);
     }
@@ -146,7 +146,7 @@ const DataManagement = () => {
       return;
     }
     try {
-      const { data } = await API.get(`/data/preview/${datasetName}`);
+      const { data } = await ML_API.get(`/data/preview/${datasetName}`);
       setPreviewData(data);
       setPreviewOpen(datasetName);
     } catch (err) {
@@ -157,10 +157,10 @@ const DataManagement = () => {
   const handleDeleteDataset = async (datasetName) => {
     if (!window.confirm(`Are you sure you want to remove "${datasetName}"? A backup will be saved.`)) return;
     try {
-      await API.delete(`/data/${datasetName}`);
+      await ML_API.delete(`/data/${datasetName}`);
       fetchDatasets();
     } catch (err) {
-      setError(err.response?.data?.message || 'Delete failed');
+      setError(err.response?.data?.message || err.response?.data?.detail || 'Delete failed');
     }
   };
 
@@ -168,7 +168,7 @@ const DataManagement = () => {
     setAddingRows(true);
     setError('');
     try {
-      const { data } = await API.post('/data/add-rows', {
+      const { data } = await ML_API.post('/data/add-rows', {
         datasetType: selectedDatasetType,
         rows: [rowFormData]
       });
@@ -177,7 +177,7 @@ const DataManagement = () => {
       setAddRowsOpen(false);
       fetchDatasets();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to add row');
+      setError(err.response?.data?.message || err.response?.data?.detail || 'Failed to add row');
     } finally {
       setAddingRows(false);
     }

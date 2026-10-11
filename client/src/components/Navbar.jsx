@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Bell, Sparkles, Server, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import API from '../services/api';
+import ML_API from '../services/mlApi';
 
 const Navbar = ({ title, subtitle }) => {
   const { user } = useAuth();
-  const [unreadAlerts, setUnreadAlerts] = useState(3);
+  const [unreadAlerts, setUnreadAlerts] = useState(0);
   const [mlStatus, setMlStatus] = useState('Active');
 
   useEffect(() => {
     const fetchAlertCount = async () => {
       try {
-        const { data } = await API.get('/alerts?resolved=false');
+        const { data } = await ML_API.get('/alerts?resolved=false');
         if (data && data.alerts) {
           setUnreadAlerts(data.alerts.length);
         }

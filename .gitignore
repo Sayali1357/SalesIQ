@@ -1,14 +1,24 @@
-
 # Dependencies
 node_modules/
 client/node_modules/
 server/node_modules/
 
+# Python cache & virtualenv
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
 # Environment variables
 .env
+client/.env
+server/.env
 
 # Build files
 dist/
+client/dist/
 build/
 
 # Logs
@@ -16,3 +26,4 @@ build/
 
 # OS files
 .DS_Store
+Thumbs.db

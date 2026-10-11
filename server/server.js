@@ -15,25 +15,52 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Health Check API
-app.get('/api/health', (req, res) => {
+const mongoose = require('mongoose');
+
+// Root API Welcome / Status
+app.get('/', (req, res) => {
+  const dbState = ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown';
   res.json({
     status: 'online',
-    service: 'SalesIQ REST API Gateway',
+    message: 'SalesIQ Backend REST API is active and running',
+    database: {
+      status: dbState,
+      name: mongoose.connection.name || 'salesiq'
+    },
+    endpoints: {
+      health: '/api/health',
+      auth: '/api/auth',
+      dashboard: '/api/dashboard',
+      forecast: '/api/forecast',
+      customers: '/api/customers',
+      recommendations: '/api/recommendations',
+      inventory: '/api/inventory',
+      alerts: '/api/alerts',
+      data: '/api/data'
+    },
     timestamp: new Date().toISOString()
   });
 });
 
-// Mounting API Routes
+// Health Check API
+app.get('/api/health', (req, res) => {
+  const dbState = ['disconnected', 'connected', 'connecting', 'disconnecting'][mongoose.connection.readyState] || 'unknown';
+  res.json({
+    status: 'online',
+    service: 'SalesIQ REST API Gateway',
+    database: {
+      status: dbState,
+      host: mongoose.connection.host,
+      name: mongoose.connection.name
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Mounting API Routes (Dedicated to Authentication & Registration)
 app.use('/api/auth', require('./routes/authRoutes'));
-app.use('/api/dashboard', require('./routes/dashboardRoutes'));
-app.use('/api/forecast', require('./routes/forecastRoutes'));
-app.use('/api/customers', require('./routes/customerRoutes'));
-app.use('/api/recommendations', require('./routes/recommendationRoutes'));
-app.use('/api/inventory', require('./routes/inventoryRoutes'));
-app.use('/api/alerts', require('./routes/alertRoutes'));
-app.use('/api/data', require('./routes/dataUploadRoutes'));
 app.use('/api', require('./routes/userRoutes'));
+
 
 // 404 Route Handler
 app.use((req, res) => {

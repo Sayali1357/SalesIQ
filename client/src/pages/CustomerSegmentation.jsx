@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import API from '../services/api';
+import ML_API from '../services/mlApi';
 import Navbar from '../components/Navbar';
 import { 
   Users, 
@@ -49,7 +49,7 @@ const CustomerSegmentation = () => {
   const fetchSegmentation = async () => {
     setLoading(true);
     try {
-      const { data } = await API.get(`/customers/segments?nClusters=${nClusters}`);
+      const { data } = await ML_API.get(`/customers/segments?nClusters=${nClusters}`);
       setSegmentData(data);
     } catch (error) {
       console.error('Error loading customer segments:', error);
@@ -209,8 +209,8 @@ const CustomerSegmentation = () => {
 
               <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
                 {/* Search */}
-                <div className="relative flex-1 md:w-64">
-                  <Search className="absolute left-3 top-2.5 text-slate-400 w-4 h-4" />
+                <div className="relative flex items-center flex-1 md:w-64">
+                  <Search className="absolute left-3 text-slate-400 w-4 h-4 pointer-events-none z-10" />
                   <input
                     type="text"
                     placeholder="Search Customer ID..."
@@ -219,7 +219,7 @@ const CustomerSegmentation = () => {
                       setSearch(e.target.value);
                       setCurrentPage(1);
                     }}
-                    className="bi-input pl-9 text-xs py-2 w-full"
+                    className="bi-input pl-10 text-xs py-2 w-full"
                   />
                 </div>
 

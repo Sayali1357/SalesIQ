@@ -46,3 +46,9 @@ services:
           type: web
           name: salesiq-backend
           property: url
+      - key: VITE_ML_API_URL
+        fromService:
+          type: web
+          name: salesiq-ml-service
+          property: url
+

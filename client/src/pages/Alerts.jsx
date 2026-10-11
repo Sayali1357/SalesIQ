@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import API from '../services/api';
+import ML_API from '../services/mlApi';
 import Navbar from '../components/Navbar';
 import StatCard from '../components/StatCard';
 import { 
@@ -46,7 +46,7 @@ const Alerts = () => {
   const fetchAlerts = async () => {
     setLoading(true);
     try {
-      const { data } = await API.get('/alerts');
+      const { data } = await ML_API.get('/alerts');
       if (data) setAlertData(data);
     } catch (error) {
       console.error('Error fetching alerts:', error);
@@ -58,7 +58,7 @@ const Alerts = () => {
   const handleRunCheck = async () => {
     setRunningCheck(true);
     try {
-      const { data } = await API.post('/alerts/generate');
+      const { data } = await ML_API.post('/alerts/generate');
       if (data && data.alerts) {
         setAlertData(prev => ({
           ...prev,
@@ -75,7 +75,7 @@ const Alerts = () => {
 
   const handleResolve = async (id) => {
     try {
-      await API.patch(`/alerts/${id}/resolve`);
+      await ML_API.patch(`/alerts/${id}/resolve`);
       fetchAlerts();
     } catch (error) {
       console.error('Error resolving alert:', error);
@@ -84,7 +84,7 @@ const Alerts = () => {
 
   const handleDelete = async (id) => {
     try {
-      await API.delete(`/alerts/${id}`);
+      await ML_API.delete(`/alerts/${id}`);
       fetchAlerts();
     } catch (error) {
       console.error('Error deleting alert:', error);

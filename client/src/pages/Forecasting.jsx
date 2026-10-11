@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import API from '../services/api';
+import ML_API from '../services/mlApi';
 import Navbar from '../components/Navbar';
 import StatCard from '../components/StatCard';
 import { 
@@ -39,7 +39,7 @@ const Forecasting = () => {
   const runForecast = async (model = selectedModel, days = forecastDays) => {
     setLoading(true);
     try {
-      const { data } = await API.post('/forecast', {
+      const { data } = await ML_API.post('/forecast', {
         model,
         forecastDays: parseInt(days, 10)
       });
