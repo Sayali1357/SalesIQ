@@ -5,9 +5,17 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data'))
 
-def get_product_recommendations(product_id=None, top_n=5):
+_REC_CACHE = None
+_REC_MTIME = None
+
+def _get_rec_matrix(force_refresh=False):
+    global _REC_CACHE, _REC_MTIME
     ecom_csv_path = os.path.join(DATA_DIR, 'ecommerce_sales.csv')
-    
+    current_mtime = os.path.getmtime(ecom_csv_path) if os.path.exists(ecom_csv_path) else None
+
+    if not force_refresh and _REC_CACHE is not None and _REC_MTIME == current_mtime:
+        return _REC_CACHE
+
     if os.path.exists(ecom_csv_path):
         df = pd.read_csv(ecom_csv_path)
     else:
@@ -38,16 +46,29 @@ def get_product_recommendations(product_id=None, top_n=5):
     user_item_matrix = df.pivot_table(index='customer_id', columns='product_id', values='quantity', aggfunc='sum', fill_value=0)
 
     if user_item_matrix.shape[1] < 2:
-        return {'product_id': product_id, 'recommendations': []}
+        _REC_CACHE = (None, product_meta)
+        _REC_MTIME = current_mtime
+        return _REC_CACHE
 
-    # Cosine Similarity Matrix between items (transpose of user-item matrix)
+    # Cosine Similarity Matrix between items
     item_similarity = cosine_similarity(user_item_matrix.T)
     item_sim_df = pd.DataFrame(item_similarity, index=user_item_matrix.columns, columns=user_item_matrix.columns)
+
+    _REC_CACHE = (item_sim_df, product_meta)
+    _REC_MTIME = current_mtime
+    return _REC_CACHE
+
+
+def get_product_recommendations(product_id=None, top_n=5):
+    item_sim_df, product_meta = _get_rec_matrix()
+
+    if item_sim_df is None or item_sim_df.empty:
+        return {'product_id': product_id, 'recommendations': []}
 
     if not product_id or product_id not in item_sim_df.index:
         product_id = item_sim_df.index[0]
 
-    sim_scores = item_sim_df[product_id].drop(index=product_id).sort_values(ascending=False).head(top_n)
+    sim_scores = item_sim_df[product_id].drop(index=product_id, errors='ignore').sort_values(ascending=False).head(top_n)
 
     recommendations = []
     for target_pid, score in sim_scores.items():
@@ -82,6 +103,7 @@ def get_product_recommendations(product_id=None, top_n=5):
 def retrain_recommendations():
     """Re-build the recommendation similarity matrix from latest data."""
     try:
+        _get_rec_matrix(force_refresh=True)
         result = get_product_recommendations()
         return {
             'status': 'success',

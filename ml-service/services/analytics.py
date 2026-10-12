@@ -190,16 +190,43 @@ def parse_days_from_period(period_str: Optional[str]) -> int:
     match = re.search(r'\d+', str(period_str))
     return int(match.group()) if match else 30
 
+_CACHED_DF = None
+_CACHED_MTIME = None
+_ANALYTICS_CACHE = {}
+
+def invalidate_analytics_cache():
+    global _CACHED_DF, _CACHED_MTIME, _ANALYTICS_CACHE
+    _CACHED_DF = None
+    _CACHED_MTIME = None
+    _ANALYTICS_CACHE.clear()
+
 def load_ecommerce_data() -> pd.DataFrame:
+    global _CACHED_DF, _CACHED_MTIME
     file_path = os.path.join(DATA_DIR, 'ecommerce_sales.csv')
     if not os.path.exists(file_path):
         return pd.DataFrame()
-    df = pd.read_csv(file_path)
-    if 'order_date' in df.columns:
-        df['order_date'] = pd.to_datetime(df['order_date'])
-    return df
+    
+    try:
+        mtime = os.path.getmtime(file_path)
+        if _CACHED_DF is not None and _CACHED_MTIME == mtime:
+            return _CACHED_DF
+        
+        df = pd.read_csv(file_path)
+        if 'order_date' in df.columns:
+            df['order_date'] = pd.to_datetime(df['order_date'])
+        
+        _CACHED_DF = df
+        _CACHED_MTIME = mtime
+        return _CACHED_DF
+    except Exception as e:
+        print(f"[Analytics] Error loading ecommerce data: {e}")
+        return pd.DataFrame()
 
 def get_dashboard_overview(period_str: str = "30 days") -> Dict[str, Any]:
+    cache_key = f"overview_{period_str}"
+    if cache_key in _ANALYTICS_CACHE:
+        return _ANALYTICS_CACHE[cache_key]
+    
     days = parse_days_from_period(period_str)
     df = load_ecommerce_data()
     if df.empty:
@@ -244,7 +271,7 @@ def get_dashboard_overview(period_str: str = "30 days") -> Dict[str, Any]:
             return round(((c - p) / p) * 100, 1)
         return 100.0 if c > 0 else 0.0
 
-    return {
+    res = {
         'period': f"{days} days",
         'days': days,
         'totalRevenue': round(total_revenue, 2),
@@ -256,8 +283,14 @@ def get_dashboard_overview(period_str: str = "30 days") -> Dict[str, Any]:
         'avgOrderValue': round(avg_order_value, 2),
         'aovGrowth': calc_growth(avg_order_value, prev_aov)
     }
+    _ANALYTICS_CACHE[cache_key] = res
+    return res
 
 def get_revenue_trend(period_str: str = "30 days") -> List[Dict[str, Any]]:
+    cache_key = f"trend_{period_str}"
+    if cache_key in _ANALYTICS_CACHE:
+        return _ANALYTICS_CACHE[cache_key]
+
     days = parse_days_from_period(period_str)
     df = load_ecommerce_data()
     if df.empty:
@@ -290,9 +323,14 @@ def get_revenue_trend(period_str: str = "30 days") -> List[Dict[str, Any]]:
             'orders': int(row['orders']),
             'movingAverage': round(float(row['movingAverage']), 2)
         })
+    _ANALYTICS_CACHE[cache_key] = result
     return result
 
 def get_categories_breakdown(period_str: str = "30 days") -> List[Dict[str, Any]]:
+    cache_key = f"cat_{period_str}"
+    if cache_key in _ANALYTICS_CACHE:
+        return _ANALYTICS_CACHE[cache_key]
+
     days = parse_days_from_period(period_str)
     df = load_ecommerce_data()
     if df.empty:
@@ -326,9 +364,14 @@ def get_categories_breakdown(period_str: str = "30 days") -> List[Dict[str, Any]
             'units': int(row['quantity']),
             'percentage': pct
         })
+    _ANALYTICS_CACHE[cache_key] = result
     return result
 
 def get_regions_breakdown(period_str: str = "30 days") -> List[Dict[str, Any]]:
+    cache_key = f"reg_{period_str}"
+    if cache_key in _ANALYTICS_CACHE:
+        return _ANALYTICS_CACHE[cache_key]
+
     days = parse_days_from_period(period_str)
     df = load_ecommerce_data()
     if df.empty:
@@ -355,9 +398,14 @@ def get_regions_breakdown(period_str: str = "30 days") -> List[Dict[str, Any]]:
             'revenue': round(float(row['total_amount']), 2),
             'orders': int(row['order_id'])
         })
+    _ANALYTICS_CACHE[cache_key] = result
     return result
 
 def get_channels_breakdown(period_str: str = "30 days") -> List[Dict[str, Any]]:
+    cache_key = f"chan_{period_str}"
+    if cache_key in _ANALYTICS_CACHE:
+        return _ANALYTICS_CACHE[cache_key]
+
     days = parse_days_from_period(period_str)
     df = load_ecommerce_data()
     if df.empty:
@@ -387,9 +435,14 @@ def get_channels_breakdown(period_str: str = "30 days") -> List[Dict[str, Any]]:
             'revenue': round(rev, 2),
             'percentage': pct
         })
+    _ANALYTICS_CACHE[cache_key] = result
     return result
 
 def get_top_products(period_str: str = "30 days", top_n: int = 5) -> List[Dict[str, Any]]:
+    cache_key = f"top_{period_str}_{top_n}"
+    if cache_key in _ANALYTICS_CACHE:
+        return _ANALYTICS_CACHE[cache_key]
+
     days = parse_days_from_period(period_str)
     df = load_ecommerce_data()
     if df.empty:
@@ -422,6 +475,7 @@ def get_top_products(period_str: str = "30 days", top_n: int = 5) -> List[Dict[s
             'revenue': round(float(row['total_amount']), 2),
             'avgPrice': round(float(row['price']), 2)
         })
+    _ANALYTICS_CACHE[cache_key] = result
     return result
 
 def get_available_products() -> List[Dict[str, Any]]:

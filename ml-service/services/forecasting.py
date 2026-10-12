@@ -12,8 +12,17 @@ MODELS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..',
 
 FEATURE_COLS = ['day_of_week', 'day', 'month', 'is_weekend', 'lag_1', 'lag_7', 'lag_14', 'lag_28', 'rolling_mean_7', 'rolling_mean_14', 'rolling_std_7']
 
-def load_data_and_train_eval():
+_TRAINED_CACHE = None
+_TRAINED_MTIME = None
+
+def load_data_and_train_eval(force_retrain=False):
+    global _TRAINED_CACHE, _TRAINED_MTIME
     csv_path = os.path.join(DATA_DIR, 'daily_sales_features.csv')
+    
+    current_mtime = os.path.getmtime(csv_path) if os.path.exists(csv_path) else None
+    if not force_retrain and _TRAINED_CACHE is not None and _TRAINED_MTIME == current_mtime:
+        return _TRAINED_CACHE
+
     if not os.path.exists(csv_path):
         # Fallback synthetic dataset generator if csv doesn't exist
         dates = pd.date_range(end=pd.Timestamp.now(), periods=365, freq='D')
@@ -112,6 +121,8 @@ def load_data_and_train_eval():
     for k in models_info:
         models_info[k]['is_best'] = (k == best_key)
 
+    _TRAINED_CACHE = (df, models_info)
+    _TRAINED_MTIME = current_mtime
     return df, models_info
 
 def generate_forecast(model_name="random_forest", forecast_days=30):
@@ -245,7 +256,7 @@ def generate_forecast(model_name="random_forest", forecast_days=30):
 def retrain_models():
     """Re-train all forecasting models using the latest data from CSV files on disk."""
     try:
-        df, models_info = load_data_and_train_eval()
+        df, models_info = load_data_and_train_eval(force_retrain=True)
         
         # Save re-trained models to disk
         for key, info in models_info.items():

@@ -7,9 +7,25 @@ from sklearn.decomposition import PCA
 
 DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'data'))
 
-def run_rfm_segmentation(n_clusters=4):
+_SEG_CACHE = {}
+_SEG_MTIME = None
+
+def run_rfm_segmentation(n_clusters=4, force_refresh=False):
+    global _SEG_CACHE, _SEG_MTIME
     seg_csv_path = os.path.join(DATA_DIR, 'customer_segments.csv')
     ecom_csv_path = os.path.join(DATA_DIR, 'ecommerce_sales.csv')
+
+    target_file = seg_csv_path if os.path.exists(seg_csv_path) else ecom_csv_path
+    current_mtime = os.path.getmtime(target_file) if os.path.exists(target_file) else None
+
+    if _SEG_MTIME != current_mtime:
+        _SEG_CACHE.clear()
+        _SEG_MTIME = current_mtime
+
+    n_clusters = max(2, min(n_clusters, 6))
+
+    if not force_refresh and n_clusters in _SEG_CACHE:
+        return _SEG_CACHE[n_clusters]
 
     if os.path.exists(seg_csv_path):
         df_rfm = pd.read_csv(seg_csv_path)
@@ -45,9 +61,8 @@ def run_rfm_segmentation(n_clusters=4):
     scaler = StandardScaler()
     rfm_scaled = scaler.fit_transform(rfm_features)
 
-    # K-Means Clustering
-    n_clusters = max(2, min(n_clusters, 6))
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+    # K-Means Clustering (n_init=3 is fast and consistent with random_state)
+    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=3)
     cluster_labels = kmeans.fit_predict(rfm_scaled)
     df_rfm['Cluster'] = cluster_labels
 
@@ -65,25 +80,22 @@ def run_rfm_segmentation(n_clusters=4):
         'customer_id': 'count'
     }).rename(columns={'customer_id': 'count'}).reset_index()
 
-    # Rank clusters by monetary / frequency score and recency
-    # Lower recency is better; higher frequency/monetary is better
-    cluster_stats['score'] = (
-        (1 / (cluster_stats['Recency'] + 1)) * 0.4 +
-        (cluster_stats['Frequency'] / cluster_stats['Frequency'].max()) * 0.3 +
-        (cluster_stats['Monetary'] / cluster_stats['Monetary'].max()) * 0.3
+    # Dynamic Persona Assignment
+    persona_pool = ['Champions', 'Loyal Customers', 'Potential Loyalists', 'At Risk', 'Lost Customers', 'Need Attention']
+    cluster_score = (
+        (cluster_stats['Monetary'] / (cluster_stats['Monetary'].max() or 1)) * 0.45 +
+        (cluster_stats['Frequency'] / (cluster_stats['Frequency'].max() or 1)) * 0.35 -
+        (cluster_stats['Recency'] / (cluster_stats['Recency'].max() or 1)) * 0.20
     )
+    ranked_indices = cluster_score.sort_values(ascending=False).index.tolist()
 
-    sorted_clusters = cluster_stats.sort_values('score', ascending=False)['Cluster'].tolist()
-
-    label_pool = ['Champions', 'Loyal Customers', 'Potential Loyalists', 'At Risk', 'Lost Customers', 'Need Attention']
-    
     cluster_label_map = {}
-    for idx, c_id in enumerate(sorted_clusters):
-        cluster_label_map[c_id] = label_pool[min(idx, len(label_pool) - 1)]
+    for rank_pos, cluster_idx in enumerate(ranked_indices):
+        cluster_id = cluster_stats.loc[cluster_idx, 'Cluster']
+        cluster_label_map[cluster_id] = persona_pool[min(rank_pos, len(persona_pool) - 1)]
 
     df_rfm['segment'] = df_rfm['Cluster'].map(cluster_label_map)
 
-    # Segment Summary Cards
     segment_cards = []
     colors = {
         'Champions': '#8b5cf6',       # Purple
@@ -107,47 +119,50 @@ def run_rfm_segmentation(n_clusters=4):
             'color': colors.get(seg_name, '#3b82f6')
         })
 
-    # PCA Points formatting
-    pca_points = []
-    for _, row in df_rfm.iterrows():
-        pca_points.append({
-            'customerId': str(row['customer_id']),
-            'pca1': float(row['PCA1']),
-            'pca2': float(row['PCA2']),
-            'segment': str(row['segment']),
-            'cluster': int(row['Cluster']),
-            'recency': int(row['Recency']),
-            'frequency': int(row['Frequency']),
-            'monetary': round(float(row['Monetary']), 2)
-        })
+    # High-speed records serialization
+    sample_df = df_rfm.head(400) if len(df_rfm) > 1000 else df_rfm
+    pca_points = [
+        {
+            'customerId': str(r['customer_id']),
+            'pca1': float(r['PCA1']),
+            'pca2': float(r['PCA2']),
+            'segment': str(r['segment']),
+            'cluster': int(r['Cluster']),
+            'recency': int(r['Recency']),
+            'frequency': int(r['Frequency']),
+            'monetary': round(float(r['Monetary']), 2)
+        }
+        for r in sample_df.to_dict('records')
+    ]
 
-    # Customer Table Records
-    customer_list = []
-    for _, row in df_rfm.iterrows():
-        customer_list.append({
-            'customerId': str(row['customer_id']),
-            'recency': int(row['Recency']),
-            'frequency': int(row['Frequency']),
-            'monetary': round(float(row['Monetary']), 2),
-            'cluster': int(row['Cluster']),
-            'segment': str(row['segment'])
-        })
+    customer_list = [
+        {
+            'customerId': str(r['customer_id']),
+            'recency': int(r['Recency']),
+            'frequency': int(r['Frequency']),
+            'monetary': round(float(r['Monetary']), 2),
+            'cluster': int(r['Cluster']),
+            'segment': str(r['segment'])
+        }
+        for r in df_rfm.head(200).to_dict('records')
+    ]
 
-    total_customers = len(df_rfm)
-
-    return {
-        'totalCustomers': total_customers,
+    result = {
+        'totalCustomers': len(df_rfm),
         'nClusters': n_clusters,
         'segmentsSummary': segment_cards,
         'pcaPoints': pca_points,
         'customers': customer_list
     }
 
+    _SEG_CACHE[n_clusters] = result
+    return result
+
 
 def retrain_segmentation():
     """Re-run segmentation on latest data files."""
     try:
-        result = run_rfm_segmentation(n_clusters=4)
+        result = run_rfm_segmentation(n_clusters=4, force_refresh=True)
         return {
             'status': 'success',
             'totalCustomers': result['totalCustomers'],

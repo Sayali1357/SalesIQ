@@ -11,7 +11,9 @@ import {
   Search, 
   Filter, 
   ScatterChart as ScatterIcon,
-  RefreshCw
+  RefreshCw,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -25,6 +27,8 @@ import {
   Legend,
   Cell
 } from 'recharts';
+import { generateDefaultSegmentation } from '../services/mockData';
+import { getCached, setCached } from '../services/cache';
 
 const SEGMENT_COLORS = {
   'Champions': '#8b5cf6',       // Purple
@@ -37,8 +41,14 @@ const SEGMENT_COLORS = {
 
 const CustomerSegmentation = () => {
   const [nClusters, setNClusters] = useState(4);
-  const [loading, setLoading] = useState(true);
-  const [segmentData, setSegmentData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
+
+  // Initialize with complete fallback segmentation so PCA scatter plot renders immediately
+  const [segmentData, setSegmentData] = useState(() => 
+    getCached('seg_4') || generateDefaultSegmentation(4)
+  );
 
   // Table filters
   const [search, setSearch] = useState('');
@@ -46,13 +56,35 @@ const CustomerSegmentation = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  const fetchSegmentation = async () => {
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  const fetchSegmentation = async (forceRefresh = false) => {
+    const cacheKey = `seg_${nClusters}`;
+    const cached = getCached(cacheKey);
+    if (!forceRefresh && cached) {
+      setSegmentData(cached);
+      return;
+    }
+
     setLoading(true);
     try {
       const { data } = await ML_API.get(`/customers/segments?nClusters=${nClusters}`);
-      setSegmentData(data);
+      if (data && data.pcaPoints && data.pcaPoints.length > 0) {
+        setSegmentData(data);
+        setCached(cacheKey, data);
+        setIsLiveConnected(true);
+      } else {
+        const fallback = generateDefaultSegmentation(nClusters);
+        setSegmentData(fallback);
+      }
     } catch (error) {
-      console.error('Error loading customer segments:', error);
+      console.warn('Customer segmentation live API deferred, using calculated cohort model:', error);
+      setIsLiveConnected(false);
+      const fallback = generateDefaultSegmentation(nClusters);
+      setSegmentData(fallback);
+      setCached(cacheKey, fallback);
     } finally {
       setLoading(false);
     }
@@ -97,7 +129,29 @@ const CustomerSegmentation = () => {
             <p className="text-xs text-slate-400">Dynamically scale features and partition customer cohorts</p>
           </div>
 
-          <div className="flex items-center gap-4 w-full sm:w-auto">
+          <div className="flex flex-wrap items-center gap-4 w-full sm:w-auto">
+            <span 
+              className={`text-[11px] px-2.5 py-1 rounded-full font-medium inline-flex items-center gap-1.5 border transition-all ${
+                isLiveConnected 
+                  ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                  : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+              }`}
+            >
+              {isLiveConnected ? (
+                <>
+                  <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
+                  <Wifi size={12} />
+                  <span>Live Model</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
+                  <WifiOff size={12} />
+                  <span>Cohort Simulation</span>
+                </>
+              )}
+            </span>
+
             <label className="text-xs font-semibold text-slate-300">Clusters (K):</label>
             <input
               type="range"
@@ -162,7 +216,7 @@ const CustomerSegmentation = () => {
 
         {/* PCA Cluster Scatter Plot */}
         {segmentData && segmentData.pcaPoints && (
-          <div className="bi-card">
+          <div className="bi-card min-w-0">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -173,27 +227,29 @@ const CustomerSegmentation = () => {
               </div>
             </div>
 
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis type="number" dataKey="pca1" name="PCA Component 1" stroke="#64748b" tick={{ fontSize: 11 }} />
-                  <YAxis type="number" dataKey="pca2" name="PCA Component 2" stroke="#64748b" tick={{ fontSize: 11 }} />
-                  <Tooltip 
-                    cursor={{ strokeDasharray: '3 3' }}
-                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
-                    formatter={(val, name, item) => {
-                      if (name === 'PCA Component 1' || name === 'PCA Component 2') return [val, name];
-                      return [`₹${item.payload.monetary} (R:${item.payload.recency}d, F:${item.payload.frequency})`, item.payload.segment];
-                    }}
-                  />
-                  <Scatter name="Customers" data={segmentData.pcaPoints} fill="#8b5cf6">
-                    {segmentData.pcaPoints.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={SEGMENT_COLORS[entry.segment] || '#3b82f6'} />
-                    ))}
-                  </Scatter>
-                </ScatterChart>
-              </ResponsiveContainer>
+            <div className="h-80 w-full min-h-[320px] min-w-0" style={{ minHeight: '320px' }}>
+              {isMounted && (
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={320} debounce={50}>
+                  <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis type="number" dataKey="pca1" name="PCA Component 1" stroke="#64748b" tick={{ fontSize: 11 }} />
+                    <YAxis type="number" dataKey="pca2" name="PCA Component 2" stroke="#64748b" tick={{ fontSize: 11 }} />
+                    <Tooltip 
+                      cursor={{ strokeDasharray: '3 3' }}
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
+                      formatter={(val, name, item) => {
+                        if (name === 'PCA Component 1' || name === 'PCA Component 2') return [val, name];
+                        return [`₹${item.payload.monetary} (R:${item.payload.recency}d, F:${item.payload.frequency})`, item.payload.segment];
+                      }}
+                    />
+                    <Scatter name="Customers" data={segmentData.pcaPoints} fill="#8b5cf6">
+                      {segmentData.pcaPoints.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={SEGMENT_COLORS[entry.segment] || '#3b82f6'} />
+                      ))}
+                    </Scatter>
+                  </ScatterChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         )}
@@ -219,20 +275,20 @@ const CustomerSegmentation = () => {
                       setSearch(e.target.value);
                       setCurrentPage(1);
                     }}
-                    className="bi-input pl-10 text-xs py-2 w-full"
+                    className="bi-input pl-9 text-xs w-full py-1.5"
                   />
                 </div>
 
-                {/* Filter */}
+                {/* Segment Filter */}
                 <select
                   value={selectedSegmentFilter}
                   onChange={(e) => {
                     setSelectedSegmentFilter(e.target.value);
                     setCurrentPage(1);
                   }}
-                  className="bi-input text-xs py-2"
+                  className="bi-input text-xs py-1.5 px-3"
                 >
-                  <option value="All">All Segments</option>
+                  <option value="All">All Cohorts</option>
                   <option value="Champions">Champions</option>
                   <option value="Loyal Customers">Loyal Customers</option>
                   <option value="At Risk">At Risk</option>
@@ -246,33 +302,37 @@ const CustomerSegmentation = () => {
                 <thead className="bg-slate-900/80 text-xs font-semibold text-slate-400 uppercase tracking-wider border-b border-slate-800">
                   <tr>
                     <th className="px-4 py-3">Customer ID</th>
+                    <th className="px-4 py-3">Segment</th>
                     <th className="px-4 py-3 text-right">Recency (Days)</th>
                     <th className="px-4 py-3 text-right">Frequency (Orders)</th>
                     <th className="px-4 py-3 text-right">Monetary Spend</th>
                     <th className="px-4 py-3 text-center">Cluster</th>
-                    <th className="px-4 py-3 text-center">Customer Segment</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {paginatedCustomers.map((cust) => (
                     <tr key={cust.customerId} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="px-4 py-3 font-semibold text-white font-mono">{cust.customerId}</td>
-                      <td className="px-4 py-3 text-right font-mono">{cust.recency} days</td>
-                      <td className="px-4 py-3 text-right font-mono">{cust.frequency} orders</td>
-                      <td className="px-4 py-3 text-right font-bold text-emerald-400">
-                        ₹{cust.monetary.toLocaleString('en-IN')}
-                      </td>
-                      <td className="px-4 py-3 text-center font-mono text-slate-400">#{cust.cluster}</td>
-                      <td className="px-4 py-3 text-center">
+                      <td className="px-4 py-3 font-mono font-medium text-white">{cust.customerId}</td>
+                      <td className="px-4 py-3">
                         <span 
-                          className="px-3 py-1 rounded-full text-xs font-bold border"
-                          style={{
-                            backgroundColor: `${SEGMENT_COLORS[cust.segment] || '#3b82f6'}20`,
-                            borderColor: `${SEGMENT_COLORS[cust.segment] || '#3b82f6'}50`,
-                            color: SEGMENT_COLORS[cust.segment] || '#3b82f6'
+                          className="px-2.5 py-0.5 rounded-full text-xs font-semibold"
+                          style={{ 
+                            backgroundColor: `${SEGMENT_COLORS[cust.segment]}20`, 
+                            color: SEGMENT_COLORS[cust.segment],
+                            border: `1px solid ${SEGMENT_COLORS[cust.segment]}40`
                           }}
                         >
                           {cust.segment}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-300">{cust.recency}d</td>
+                      <td className="px-4 py-3 text-right font-mono text-slate-300">{cust.frequency}</td>
+                      <td className="px-4 py-3 text-right font-mono font-bold text-emerald-400">
+                        ₹{Number(cust.monetary).toLocaleString('en-IN')}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-400 font-mono">
+                          #{cust.cluster}
                         </span>
                       </td>
                     </tr>
@@ -282,21 +342,21 @@ const CustomerSegmentation = () => {
             </div>
 
             {/* Pagination Controls */}
-            <div className="flex items-center justify-between mt-4 pt-3 border-t border-slate-800 text-xs text-slate-400">
+            <div className="flex items-center justify-between mt-4 text-xs text-slate-400">
               <span>Showing {paginatedCustomers.length} of {filteredCustomers.length} customers</span>
               <div className="flex items-center gap-2">
                 <button
                   disabled={currentPage === 1}
-                  onClick={() => setCurrentPage(currentPage - 1)}
-                  className="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded disabled:opacity-50"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  className="px-3 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed rounded text-slate-200"
                 >
                   Previous
                 </button>
-                <span>Page {currentPage} of {totalPages}</span>
+                <span className="font-semibold text-slate-200">Page {currentPage} of {totalPages}</span>
                 <button
                   disabled={currentPage === totalPages}
-                  onClick={() => setCurrentPage(currentPage + 1)}
-                  className="px-3 py-1 bg-slate-800 hover:bg-slate-700 rounded disabled:opacity-50"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  className="px-3 py-1 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed rounded text-slate-200"
                 >
                   Next
                 </button>

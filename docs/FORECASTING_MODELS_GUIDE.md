@@ -1,7 +1,5 @@
 # SalesIQ Machine Learning & Forecasting Engine: Technical & Business Guide
 
----
-
 ## 1. Executive Summary
 
 This document provides a comprehensive breakdown of the machine learning algorithms, error evaluation metrics, and feature engineering pipelines implemented in **SalesIQ**. It explains the rationale behind each model selection, why raw error values (MAE & RMSE) appear large, and how to interpret forecast accuracy for business decision-making.

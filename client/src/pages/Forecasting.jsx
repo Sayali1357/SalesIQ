@@ -14,7 +14,9 @@ import {
   Play,
   IndianRupee,
   Clock,
-  Layers
+  Layers,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -28,24 +30,54 @@ import {
   BarChart,
   Bar
 } from 'recharts';
+import { generateDefaultForecast } from '../services/mockData';
+import { getCached, setCached } from '../services/cache';
 
 const Forecasting = () => {
   const [selectedModel, setSelectedModel] = useState('random_forest');
   const [forecastDays, setForecastDays] = useState(30);
   const [loading, setLoading] = useState(false);
-  const [forecastData, setForecastData] = useState(null);
+  const [isMounted, setIsMounted] = useState(false);
+  const [isLiveConnected, setIsLiveConnected] = useState(false);
+
+  // Initialize with complete fallback forecast so chart renders immediately on deployment
+  const [forecastData, setForecastData] = useState(() => 
+    getCached('forecast_random_forest_30') || generateDefaultForecast(30, 'random_forest')
+  );
   const debounceTimerRef = useRef(null);
 
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const runForecast = async (model = selectedModel, days = forecastDays) => {
+    const cacheKey = `forecast_${model}_${days}`;
+    const cached = getCached(cacheKey);
+    if (cached) {
+      setForecastData(cached);
+      return;
+    }
+
     setLoading(true);
     try {
       const { data } = await ML_API.post('/forecast', {
         model,
         forecastDays: parseInt(days, 10)
       });
-      setForecastData(data);
+      if (data && data.combinedCurve && data.combinedCurve.length > 0) {
+        setForecastData(data);
+        setCached(cacheKey, data);
+        setIsLiveConnected(true);
+      } else {
+        const fallback = generateDefaultForecast(parseInt(days, 10), model);
+        setForecastData(fallback);
+      }
     } catch (error) {
-      console.error('Forecasting error:', error);
+      console.warn('Live forecast inference deferred, using client model estimates:', error);
+      setIsLiveConnected(false);
+      const fallback = generateDefaultForecast(parseInt(days, 10), model);
+      setForecastData(fallback);
+      setCached(cacheKey, fallback);
     } finally {
       setLoading(false);
     }
@@ -79,9 +111,33 @@ const Forecasting = () => {
               <BrainCircuit className="text-primary-light" size={22} />
               Forecasting Model Engine Controls
             </h2>
-            <span className="text-xs bg-primary/20 text-primary-light border border-primary/30 px-2.5 py-1 rounded-full font-semibold">
-              Scikit-Learn Python ML Service
-            </span>
+            <div className="flex items-center gap-2">
+              <span 
+                className={`text-[11px] px-2.5 py-1 rounded-full font-medium inline-flex items-center gap-1.5 border transition-all ${
+                  isLiveConnected 
+                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' 
+                    : 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                }`}
+              >
+                {isLiveConnected ? (
+                  <>
+                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse"></span>
+                    <Wifi size={12} />
+                    <span>Live Inference</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="w-1.5 h-1.5 bg-amber-400 rounded-full"></span>
+                    <WifiOff size={12} />
+                    <span>Local ML Estimates</span>
+                  </>
+                )}
+              </span>
+
+              <span className="text-xs bg-primary/20 text-primary-light border border-primary/30 px-2.5 py-1 rounded-full font-semibold hidden sm:inline-block">
+                Scikit-Learn Python ML Service
+              </span>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5 items-end">
@@ -248,7 +304,7 @@ const Forecasting = () => {
 
         {/* Revenue Forecast Visualization Chart */}
         {forecastData && (
-          <div className="bi-card">
+          <div className="bi-card min-w-0">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-2">
               <div>
                 <h3 className="text-base font-bold text-white flex items-center gap-2">
@@ -268,20 +324,22 @@ const Forecasting = () => {
               </div>
             </div>
 
-            <div className="h-80 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={forecastData.combinedCurve}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                  <XAxis dataKey="date" stroke="#64748b" tick={{ fontSize: 11 }} />
-                  <YAxis stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
-                    formatter={(val, name) => [val ? `₹${Number(val).toLocaleString('en-IN')}` : 'N/A', name === 'actual_sales' ? 'Actual Sales' : 'Predicted Forecast']}
-                  />
-                  <Line type="monotone" dataKey="actual_sales" stroke="#8b5cf6" strokeWidth={2.5} dot={false} connectNulls={false} />
-                  <Line type="monotone" dataKey="forecast" stroke="#06b6d4" strokeWidth={2.5} strokeDasharray="4 4" dot={{ r: 3, fill: '#06b6d4' }} connectNulls={false} />
-                </ComposedChart>
-              </ResponsiveContainer>
+            <div className="h-80 w-full min-h-[320px] min-w-0" style={{ minHeight: '320px' }}>
+              {isMounted && (
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={320} debounce={50}>
+                  <ComposedChart data={forecastData.combinedCurve}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                    <XAxis dataKey="date" stroke="#64748b" tick={{ fontSize: 11 }} />
+                    <YAxis stroke="#64748b" tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
+                      formatter={(val, name) => [val ? `₹${Number(val).toLocaleString('en-IN')}` : 'N/A', name === 'actual_sales' ? 'Actual Sales' : 'Predicted Forecast']}
+                    />
+                    <Line type="monotone" dataKey="actual_sales" stroke="#8b5cf6" strokeWidth={2.5} dot={false} connectNulls={false} />
+                    <Line type="monotone" dataKey="forecast" stroke="#06b6d4" strokeWidth={2.5} strokeDasharray="4 4" dot={{ r: 3, fill: '#06b6d4' }} connectNulls={false} />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         )}
@@ -290,23 +348,25 @@ const Forecasting = () => {
         {forecastData && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Feature Importance */}
-            <div className="bi-card">
+            <div className="bi-card min-w-0">
               <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
                 <BarChart2 size={18} className="text-primary-light" />
                 Feature Importance (Top Predictors)
               </h3>
-              <div className="h-64 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={forecastData.featureImportance} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                    <XAxis type="number" stroke="#64748b" tick={{ fontSize: 11 }} />
-                    <YAxis type="category" dataKey="feature" stroke="#94a3b8" tick={{ fontSize: 11 }} width={110} />
-                    <Tooltip 
-                      contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
-                    />
-                    <Bar dataKey="importance" fill="#8b5cf6" radius={[0, 6, 6, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+              <div className="h-64 w-full min-h-[256px] min-w-0" style={{ minHeight: '256px' }}>
+                {isMounted && (
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={256} debounce={50}>
+                    <BarChart data={forecastData.featureImportance} layout="vertical">
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                      <XAxis type="number" stroke="#64748b" tick={{ fontSize: 11 }} />
+                      <YAxis type="category" dataKey="feature" stroke="#94a3b8" tick={{ fontSize: 11 }} width={140} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
+                      />
+                      <Bar dataKey="importance" fill="#8b5cf6" radius={[0, 6, 6, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             </div>
 
